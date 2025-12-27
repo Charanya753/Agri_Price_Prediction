@@ -18,26 +18,26 @@ st.set_page_config(
 st.title("🌾 Agricultural Commodity Price Prediction App")
 
 # -----------------------------
-# LOAD LSTM MODEL (SAFE)
+# LOAD LSTM MODEL
 # -----------------------------
 @st.cache_resource
 def load_lstm_model():
     model_path = "my_model.h5"
     if not os.path.exists(model_path):
-        st.error(f"❌ Model file '{model_path}' not found. Please upload it.")
+        st.error(f"❌ Model file '{model_path}' not found.")
         st.stop()
     return load_model(model_path)
 
 model = load_lstm_model()
 
 # -----------------------------
-# LOAD DATASET (SAFE)
+# LOAD DATASET
 # -----------------------------
 @st.cache_data
 def load_data():
     data_path = "Price_Agriculture_commodities_Week.csv"
     if not os.path.exists(data_path):
-        st.error(f"❌ Dataset '{data_path}' not found. Please upload it.")
+        st.error(f"❌ Dataset '{data_path}' not found.")
         st.stop()
 
     df = pd.read_csv(data_path)
@@ -74,17 +74,14 @@ weeks = st.sidebar.slider(
 # -----------------------------
 if st.sidebar.button("🔮 Predict"):
 
+    # Market-level filtering
     filtered_df = df[
         (df["Commodity"] == commodity) &
         (df["Market"] == market)
     ]
 
-    # Fallback to commodity-level data
+    # Silent fallback to commodity-level data
     if len(filtered_df) < 10:
-        st.warning(
-            f"⚠️ Only {len(filtered_df)} records found for "
-            f"{commodity} in {market}. Using overall commodity data."
-        )
         filtered_df = df[df["Commodity"] == commodity]
 
     total_records = len(filtered_df)
@@ -97,6 +94,7 @@ if st.sidebar.button("🔮 Predict"):
         )
         st.stop()
 
+    # Prepare price data
     prices = filtered_df["Modal Price"].values.reshape(-1, 1)
 
     scaler = MinMaxScaler(feature_range=(0, 1))
@@ -110,6 +108,7 @@ if st.sidebar.button("🔮 Predict"):
 
     last_date = filtered_df["Arrival_Date"].max()
 
+    # Predict future prices
     for i in range(weeks):
         next_scaled = model.predict(input_seq, verbose=0)[0][0]
         predictions.append(next_scaled)
@@ -120,12 +119,17 @@ if st.sidebar.button("🔮 Predict"):
             axis=1
         )
 
+        # Weekly data → add 7 days
         future_dates.append(last_date + timedelta(days=(i + 1) * 7))
 
+    # Inverse scaling
     predicted_prices = scaler.inverse_transform(
         np.array(predictions).reshape(-1, 1)
     ).flatten()
 
+    # -----------------------------
+    # RESULTS
+    # -----------------------------
     st.subheader("📌 Prediction Result")
 
     st.success(
@@ -134,21 +138,20 @@ if st.sidebar.button("🔮 Predict"):
         f"**₹{predicted_prices.mean():.2f}**."
     )
 
+    # -----------------------------
+    # GRAPH
+    # -----------------------------
     result_df = pd.DataFrame({
         "Date": future_dates,
         "Predicted Price (INR)": predicted_prices
     })
 
     st.line_chart(result_df.set_index("Date"))
-    st.dataframe(result_df, use_container_width=True)
 
     # -----------------------------
-    # INFO
+    # TABLE
     # -----------------------------
-    st.info(
-        f"ℹ️ Prediction generated using **{time_steps} historical records** "
-        f"after dynamic adjustment."
-    )
+    st.dataframe(result_df, use_container_width=True)
 
 # -----------------------------
 # INSTRUCTIONS
@@ -158,6 +161,5 @@ st.write("""
 1. Select the commodity and market from the sidebar.
 2. Choose the number of weeks to predict.
 3. Click **Predict** to view future prices.
-4. If market-level data is limited, the system automatically uses commodity-level trends.
-5. Predictions are generated using an **LSTM deep learning model** trained on weekly agricultural price data.
+4. Predictions are generated using an **LSTM deep learning model** trained on weekly agricultural price data.
 """)

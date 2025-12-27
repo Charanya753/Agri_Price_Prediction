@@ -1,44 +1,41 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import pickle
 from tensorflow.keras.models import load_model
 from sklearn.preprocessing import MinMaxScaler
 from datetime import timedelta
+import os
 
 # -----------------------------
-# PAGE CONFIG
+# PAGE TITLE
 # -----------------------------
-st.set_page_config(
-    page_title="Agri Price Prediction App",
-    page_icon="🌾",
-    layout="wide"
-)
+st.title("🌾 Agricultural Price Prediction App")
 
 # -----------------------------
-# LOAD MODEL
+# LOAD MODEL (SAFE)
 # -----------------------------
-@st.cache_resource
-def load_lstm_model():
-    return load_model("my_model.h5")
+try:
+    model = load_model("agri_price_prediction_model.h5")
+except FileNotFoundError:
+    st.error("Model file 'agri_price_prediction_model.h5' not found. Please upload it to the repository.")
+    st.stop()
 
-model = load_lstm_model()
-
 # -----------------------------
-# LOAD DATA
+# LOAD DATA (SAFE)
 # -----------------------------
-@st.cache_data
-def load_data():
-    df = pd.read_csv("data/agri_prices.csv")
+try:
+    df = pd.read_csv("agri_prices.csv")
     df["Arrival_Date"] = pd.to_datetime(df["Arrival_Date"], dayfirst=True)
     df = df.sort_values("Arrival_Date")
-    return df
+except FileNotFoundError:
+    st.error("Dataset file 'agri_prices.csv' not found. Please upload it to the repository.")
+    st.stop()
 
-df = load_data()
-
-# =============================
-# SIDEBAR – INPUTS
-# =============================
-st.sidebar.header("🌱 Enter Market Details")
+# -----------------------------
+# SIDEBAR INPUTS
+# -----------------------------
+st.sidebar.header("📥 Enter Market Details")
 
 commodity = st.sidebar.selectbox(
     "Commodity",
@@ -51,26 +48,16 @@ market = st.sidebar.selectbox(
 )
 
 days = st.sidebar.slider(
-    "Prediction Duration (days)",
-    1, 30, 7
+    "Days to Predict",
+    min_value=1,
+    max_value=30,
+    value=7
 )
 
-predict_btn = st.sidebar.button("🔮 Predict")
-
-# =============================
-# MAIN PAGE
-# =============================
-st.title("🌾 Agricultural Price Prediction App")
-
-st.markdown(
-    "This application predicts **future agricultural commodity prices** "
-    "using a trained **LSTM deep learning model**."
-)
-
-# =============================
-# PREDICTION RESULT
-# =============================
-if predict_btn:
+# -----------------------------
+# PREDICTION BUTTON
+# -----------------------------
+if st.sidebar.button("Predict"):
 
     filtered = df[
         (df["Commodity"] == commodity) &
@@ -78,13 +65,15 @@ if predict_btn:
     ]
 
     if len(filtered) < 60:
-        st.error("❌ Not enough historical data for prediction.")
+        st.error("Not enough historical data for prediction (minimum 60 days required).")
     else:
         prices = filtered["Modal Price"].values.reshape(-1, 1)
 
+        # Scale data
         scaler = MinMaxScaler(feature_range=(0, 1))
         scaled_prices = scaler.fit_transform(prices)
 
+        # Last 60 days as input
         last_60 = scaled_prices[-60:]
         input_seq = last_60.reshape(1, 60, 1)
 
@@ -105,20 +94,21 @@ if predict_btn:
 
             future_dates.append(last_date + timedelta(days=i + 1))
 
+        # Inverse scaling
         predicted_prices = scaler.inverse_transform(
             np.array(predictions).reshape(-1, 1)
         ).flatten()
 
         # -----------------------------
-        # RESULT TEXT (Like Sleep App)
+        # DISPLAY RESULT
         # -----------------------------
         st.subheader("📌 Prediction Result")
 
         avg_price = predicted_prices.mean()
 
-        st.success(
+        st.write(
             f"The predicted average price of **{commodity}** in **{market}** "
-            f"for the next **{days} days** is approximately **₹{avg_price:.2f}**."
+            f"for the next **{days} days** is **₹{avg_price:.2f}**."
         )
 
         # -----------------------------
@@ -136,16 +126,13 @@ if predict_btn:
         # -----------------------------
         st.dataframe(result_df, use_container_width=True)
 
-        # -----------------------------
-        # INSTRUCTIONS (Like Sleep App)
-        # -----------------------------
-        st.subheader("ℹ️ Instructions")
-        st.markdown("""
-        1. Use the sidebar to select commodity and market.
-        2. Choose prediction duration.
-        3. Click **Predict** to view forecasted prices.
-        4. Predictions are based on historical trends using LSTM.
-        """)
-
-else:
-    st.info("👈 Use the sidebar to enter details and click **Predict**")
+# -----------------------------
+# INSTRUCTIONS (LIKE SLEEP APP)
+# -----------------------------
+st.write("""
+### Instructions
+1. Use the sidebar to select the commodity and market.
+2. Choose the number of days for prediction.
+3. Click **Predict** to view forecasted prices.
+4. Predictions are generated using an LSTM deep learning model trained on historical data.
+""")

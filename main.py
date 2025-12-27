@@ -74,13 +74,12 @@ weeks = st.sidebar.slider(
 # -----------------------------
 if st.sidebar.button("🔮 Predict"):
 
-    # Step 1: Market-level filtering
     filtered_df = df[
         (df["Commodity"] == commodity) &
         (df["Market"] == market)
     ]
 
-    # Step 2: Fallback if data is too less
+    # Fallback to commodity-level data
     if len(filtered_df) < 10:
         st.warning(
             f"⚠️ Only {len(filtered_df)} records found for "
@@ -89,8 +88,6 @@ if st.sidebar.button("🔮 Predict"):
         filtered_df = df[df["Commodity"] == commodity]
 
     total_records = len(filtered_df)
-
-    # Step 3: Dynamic time steps
     time_steps = min(60, total_records)
 
     if time_steps < 10:
@@ -100,7 +97,6 @@ if st.sidebar.button("🔮 Predict"):
         )
         st.stop()
 
-    # Step 4: Prepare price data
     prices = filtered_df["Modal Price"].values.reshape(-1, 1)
 
     scaler = MinMaxScaler(feature_range=(0, 1))
@@ -114,7 +110,6 @@ if st.sidebar.button("🔮 Predict"):
 
     last_date = filtered_df["Arrival_Date"].max()
 
-    # Step 5: Predict future prices
     for i in range(weeks):
         next_scaled = model.predict(input_seq, verbose=0)[0][0]
         predictions.append(next_scaled)
@@ -125,40 +120,26 @@ if st.sidebar.button("🔮 Predict"):
             axis=1
         )
 
-        # Weekly data → add 7 days
         future_dates.append(last_date + timedelta(days=(i + 1) * 7))
 
-    # Step 6: Inverse scaling
     predicted_prices = scaler.inverse_transform(
         np.array(predictions).reshape(-1, 1)
     ).flatten()
 
-    # -----------------------------
-    # RESULTS
-    # -----------------------------
     st.subheader("📌 Prediction Result")
-
-    avg_price = predicted_prices.mean()
 
     st.success(
         f"The predicted average price of **{commodity}** "
         f"for the next **{weeks} weeks** is approximately "
-        f"**₹{avg_price:.2f}**."
+        f"**₹{predicted_prices.mean():.2f}**."
     )
 
-    # -----------------------------
-    # GRAPH
-    # -----------------------------
     result_df = pd.DataFrame({
         "Date": future_dates,
         "Predicted Price (INR)": predicted_prices
     })
 
     st.line_chart(result_df.set_index("Date"))
-
-    # -----------------------------
-    # TABLE
-    # -----------------------------
     st.dataframe(result_df, use_container_width=True)
 
     # -----------------------------

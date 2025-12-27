@@ -9,7 +9,7 @@ from datetime import timedelta
 # PAGE CONFIG
 # -----------------------------
 st.set_page_config(
-    page_title="Agri Price Prediction",
+    page_title="Agri Price Prediction App",
     page_icon="🌾",
     layout="wide"
 )
@@ -19,7 +19,7 @@ st.set_page_config(
 # -----------------------------
 @st.cache_resource
 def load_lstm_model():
-    return load_model("models/agri_price_prediction_model.h5")
+    return load_model("my_model.h5")
 
 model = load_lstm_model()
 
@@ -35,122 +35,117 @@ def load_data():
 
 df = load_data()
 
-# -----------------------------
-# SIDEBAR NAVIGATION
-# -----------------------------
-st.sidebar.title("🌱 Navigation")
-page = st.sidebar.radio("Go to", ["Home", "About", "Predict"])
+# =============================
+# SIDEBAR – INPUTS
+# =============================
+st.sidebar.header("🌱 Enter Market Details")
 
-# -----------------------------
-# HOME PAGE
-# -----------------------------
-if page == "Home":
-    st.title("🌾 Agricultural Price Prediction System")
-    st.markdown("""
-    This application predicts **future agricultural commodity prices**
-    using a **deep learning LSTM model** trained on historical market data.
+commodity = st.sidebar.selectbox(
+    "Commodity",
+    sorted(df["Commodity"].unique())
+)
 
-    ### Features
-    - Real market data
-    - LSTM-based time series forecasting
-    - Interactive prediction interface
-    """)
+market = st.sidebar.selectbox(
+    "Market",
+    sorted(df[df["Commodity"] == commodity]["Market"].unique())
+)
 
-# -----------------------------
-# ABOUT PAGE
-# -----------------------------
-elif page == "About":
-    st.title("📘 About This Project")
-    st.markdown("""
-    **Technology Stack**
-    - Python
-    - TensorFlow (LSTM)
-    - Streamlit
-    - Pandas & NumPy
+days = st.sidebar.slider(
+    "Prediction Duration (days)",
+    1, 30, 7
+)
 
-    **Use Case**
-    - Helps farmers and traders estimate future prices
-    - Supports better planning and decision-making
+predict_btn = st.sidebar.button("🔮 Predict")
 
-    **Model**
-    - Long Short-Term Memory (LSTM)
-    - Trained on historical modal prices
-    """)
+# =============================
+# MAIN PAGE
+# =============================
+st.title("🌾 Agricultural Price Prediction App")
 
-# -----------------------------
-# PREDICTION PAGE
-# -----------------------------
-elif page == "Predict":
-    st.title("📈 Price Prediction")
+st.markdown(
+    "This application predicts **future agricultural commodity prices** "
+    "using a trained **LSTM deep learning model**."
+)
 
-    col1, col2 = st.columns([1, 2])
+# =============================
+# PREDICTION RESULT
+# =============================
+if predict_btn:
 
-    with col1:
-        commodity = st.selectbox(
-            "Select Commodity",
-            sorted(df["Commodity"].unique())
+    filtered = df[
+        (df["Commodity"] == commodity) &
+        (df["Market"] == market)
+    ]
+
+    if len(filtered) < 60:
+        st.error("❌ Not enough historical data for prediction.")
+    else:
+        prices = filtered["Modal Price"].values.reshape(-1, 1)
+
+        scaler = MinMaxScaler(feature_range=(0, 1))
+        scaled_prices = scaler.fit_transform(prices)
+
+        last_60 = scaled_prices[-60:]
+        input_seq = last_60.reshape(1, 60, 1)
+
+        predictions = []
+        future_dates = []
+
+        last_date = filtered["Arrival_Date"].max()
+
+        for i in range(days):
+            next_scaled = model.predict(input_seq, verbose=0)[0][0]
+            predictions.append(next_scaled)
+
+            input_seq = np.append(
+                input_seq[:, 1:, :],
+                [[[next_scaled]]],
+                axis=1
+            )
+
+            future_dates.append(last_date + timedelta(days=i + 1))
+
+        predicted_prices = scaler.inverse_transform(
+            np.array(predictions).reshape(-1, 1)
+        ).flatten()
+
+        # -----------------------------
+        # RESULT TEXT (Like Sleep App)
+        # -----------------------------
+        st.subheader("📌 Prediction Result")
+
+        avg_price = predicted_prices.mean()
+
+        st.success(
+            f"The predicted average price of **{commodity}** in **{market}** "
+            f"for the next **{days} days** is approximately **₹{avg_price:.2f}**."
         )
 
-        market = st.selectbox(
-            "Select Market",
-            sorted(df[df["Commodity"] == commodity]["Market"].unique())
-        )
+        # -----------------------------
+        # GRAPH
+        # -----------------------------
+        result_df = pd.DataFrame({
+            "Date": future_dates,
+            "Predicted Price (INR)": predicted_prices
+        })
 
-        days = st.slider("Days to Predict", 1, 30, 7)
+        st.line_chart(result_df.set_index("Date"))
 
-        predict_btn = st.button("Predict Price")
+        # -----------------------------
+        # TABLE
+        # -----------------------------
+        st.dataframe(result_df, use_container_width=True)
 
-    # -----------------------------
-    # PREDICTION LOGIC (REAL)
-    # -----------------------------
-    if predict_btn:
-        filtered = df[
-            (df["Commodity"] == commodity) &
-            (df["Market"] == market)
-        ]
+        # -----------------------------
+        # INSTRUCTIONS (Like Sleep App)
+        # -----------------------------
+        st.subheader("ℹ️ Instructions")
+        st.markdown("""
+        1. Use the sidebar to select commodity and market.
+        2. Choose prediction duration.
+        3. Click **Predict** to view forecasted prices.
+        4. Predictions are based on historical trends using LSTM.
+        """)
 
-        if len(filtered) < 60:
-            st.error("Not enough historical data for prediction.")
-        else:
-            prices = filtered["Modal Price"].values.reshape(-1, 1)
-
-            # Scale data (same as training)
-            scaler = MinMaxScaler(feature_range=(0, 1))
-            scaled_prices = scaler.fit_transform(prices)
-
-            # Last 60 days
-            last_60 = scaled_prices[-60:]
-            input_seq = last_60.reshape(1, 60, 1)
-
-            predictions = []
-            future_dates = []
-
-            last_date = filtered["Arrival_Date"].max()
-
-            for i in range(days):
-                next_scaled = model.predict(input_seq, verbose=0)[0][0]
-                predictions.append(next_scaled)
-
-                # Update sequence
-                input_seq = np.append(
-                    input_seq[:, 1:, :],
-                    [[[next_scaled]]],
-                    axis=1
-                )
-
-                future_dates.append(last_date + timedelta(days=i + 1))
-
-            # Inverse scale
-            predicted_prices = scaler.inverse_transform(
-                np.array(predictions).reshape(-1, 1)
-            ).flatten()
-
-            result_df = pd.DataFrame({
-                "Date": future_dates,
-                "Predicted Price (INR)": predicted_prices
-            })
-
-            with col2:
-                st.subheader("📊 Prediction Results")
-                st.line_chart(result_df.set_index("Date"))
-                st.dataframe(result_df, use_container_width=True)
+else:
+    st.info("👈 Use the sidebar to enter details and click **Predict**")

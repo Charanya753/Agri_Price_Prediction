@@ -66,7 +66,7 @@ market = st.sidebar.selectbox(
 days = st.sidebar.slider(
     "Days to Predict",
     min_value=1,
-    max_value=30,
+    max_value=100,
     value=7
 )
 

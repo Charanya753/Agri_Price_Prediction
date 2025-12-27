@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import pickle
 from tensorflow.keras.models import load_model
 from sklearn.preprocessing import MinMaxScaler
 from datetime import timedelta
@@ -10,27 +9,44 @@ import os
 # -----------------------------
 # PAGE TITLE
 # -----------------------------
-st.title("🌾 Agricultural Price Prediction App")
+st.title("🌾 Agricultural Commodity Price Prediction App")
 
 # -----------------------------
-# LOAD MODEL (SAFE)
+# LOAD LSTM MODEL (SAFE)
 # -----------------------------
-try:
-    model = load_model("agri_price_prediction_model.h5")
-except FileNotFoundError:
-    st.error("Model file 'agri_price_prediction_model.h5' not found. Please upload it to the repository.")
-    st.stop()
+@st.cache_resource
+def load_lstm_model():
+    model_path = "my_model.h5"
+
+    if not os.path.exists(model_path):
+        st.error(f"❌ Model file '{model_path}' not found. Please upload it to the repository.")
+        st.stop()
+
+    return load_model(model_path)
+
+model = load_lstm_model()
 
 # -----------------------------
-# LOAD DATA (SAFE)
+# LOAD DATASET (SAFE)
 # -----------------------------
-try:
-    df = pd.read_csv("agri_prices.csv")
+@st.cache_data
+def load_data():
+    data_path = "Price_Agriculture_commodities_Week.csv"
+
+    if not os.path.exists(data_path):
+        st.error(f"❌ Dataset '{data_path}' not found. Please upload it to the repository.")
+        st.stop()
+
+    df = pd.read_csv(data_path)
+
+    # Expected columns
+    # Commodity | Market | Arrival_Date | Modal Price
     df["Arrival_Date"] = pd.to_datetime(df["Arrival_Date"], dayfirst=True)
     df = df.sort_values("Arrival_Date")
-except FileNotFoundError:
-    st.error("Dataset file 'agri_prices.csv' not found. Please upload it to the repository.")
-    st.stop()
+
+    return df
+
+df = load_data()
 
 # -----------------------------
 # SIDEBAR INPUTS
@@ -57,42 +73,43 @@ days = st.sidebar.slider(
 # -----------------------------
 # PREDICTION BUTTON
 # -----------------------------
-if st.sidebar.button("Predict"):
+if st.sidebar.button("🔮 Predict"):
 
-    filtered = df[
+    filtered_df = df[
         (df["Commodity"] == commodity) &
         (df["Market"] == market)
     ]
 
-    if len(filtered) < 60:
-        st.error("Not enough historical data for prediction (minimum 60 days required).")
+    if len(filtered_df) < 60:
+        st.error("❌ Not enough historical data (minimum 60 records required).")
     else:
-        prices = filtered["Modal Price"].values.reshape(-1, 1)
+        prices = filtered_df["Modal Price"].values.reshape(-1, 1)
 
-        # Scale data
+        # Scaling
         scaler = MinMaxScaler(feature_range=(0, 1))
         scaled_prices = scaler.fit_transform(prices)
 
-        # Last 60 days as input
+        # Last 60 time steps
         last_60 = scaled_prices[-60:]
         input_seq = last_60.reshape(1, 60, 1)
 
         predictions = []
         future_dates = []
 
-        last_date = filtered["Arrival_Date"].max()
+        last_date = filtered_df["Arrival_Date"].max()
 
         for i in range(days):
             next_scaled = model.predict(input_seq, verbose=0)[0][0]
             predictions.append(next_scaled)
 
+            # Update input sequence
             input_seq = np.append(
                 input_seq[:, 1:, :],
                 [[[next_scaled]]],
                 axis=1
             )
 
-            future_dates.append(last_date + timedelta(days=i + 1))
+            future_dates.append(last_date + timedelta(days=i + 7))  # weekly data
 
         # Inverse scaling
         predicted_prices = scaler.inverse_transform(
@@ -100,15 +117,15 @@ if st.sidebar.button("Predict"):
         ).flatten()
 
         # -----------------------------
-        # DISPLAY RESULT
+        # RESULT DISPLAY
         # -----------------------------
         st.subheader("📌 Prediction Result")
 
         avg_price = predicted_prices.mean()
 
-        st.write(
+        st.success(
             f"The predicted average price of **{commodity}** in **{market}** "
-            f"for the next **{days} days** is **₹{avg_price:.2f}**."
+            f"for the next **{days} weeks** is approximately **₹{avg_price:.2f}**."
         )
 
         # -----------------------------
@@ -127,12 +144,12 @@ if st.sidebar.button("Predict"):
         st.dataframe(result_df, use_container_width=True)
 
 # -----------------------------
-# INSTRUCTIONS (LIKE SLEEP APP)
+# INSTRUCTIONS
 # -----------------------------
 st.write("""
-### Instructions
-1. Use the sidebar to select the commodity and market.
-2. Choose the number of days for prediction.
-3. Click **Predict** to view forecasted prices.
-4. Predictions are generated using an LSTM deep learning model trained on historical data.
+### ℹ️ Instructions
+1. Select the commodity and market from the sidebar.
+2. Choose the number of weeks to predict.
+3. Click **Predict** to view future prices.
+4. Predictions are generated using an **LSTM deep learning model** trained on weekly agricultural price data.
 """)

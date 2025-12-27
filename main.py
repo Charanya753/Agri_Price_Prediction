@@ -24,7 +24,7 @@ st.title("🌾 Agricultural Commodity Price Prediction App")
 def load_lstm_model():
     model_path = "my_model.h5"
     if not os.path.exists(model_path):
-        st.error(f"❌ Model file '{model_path}' not found.")
+        st.error(f"❌ Model file '{model_path}' not found. Please upload it.")
         st.stop()
     return load_model(model_path)
 
@@ -37,7 +37,7 @@ model = load_lstm_model()
 def load_data():
     data_path = "Price_Agriculture_commodities_Week.csv"
     if not os.path.exists(data_path):
-        st.error(f"❌ Dataset '{data_path}' not found.")
+        st.error(f"❌ Dataset '{data_path}' not found. Please upload it.")
         st.stop()
 
     df = pd.read_csv(data_path)
@@ -62,7 +62,7 @@ market = st.sidebar.selectbox(
     sorted(df[df["Commodity"] == commodity]["Market"].unique())
 )
 
-days = st.sidebar.slider(
+weeks = st.sidebar.slider(
     "Weeks to Predict",
     min_value=1,
     max_value=100,
@@ -70,33 +70,42 @@ days = st.sidebar.slider(
 )
 
 # -----------------------------
-# PREDICTION
+# PREDICTION LOGIC
 # -----------------------------
 if st.sidebar.button("🔮 Predict"):
 
+    # Step 1: Market-level filtering
     filtered_df = df[
         (df["Commodity"] == commodity) &
         (df["Market"] == market)
     ]
 
+    # Step 2: Fallback if data is too less
+    if len(filtered_df) < 10:
+        st.warning(
+            f"⚠️ Only {len(filtered_df)} records found for "
+            f"{commodity} in {market}. Using overall commodity data."
+        )
+        filtered_df = df[df["Commodity"] == commodity]
+
     total_records = len(filtered_df)
 
-    # -----------------------------
-    # DYNAMIC TIME STEPS FIX ✅
-    # -----------------------------
+    # Step 3: Dynamic time steps
     time_steps = min(60, total_records)
 
     if time_steps < 10:
-        st.error("❌ Not enough historical data (minimum 10 records required).")
+        st.error(
+            f"❌ Not enough historical data for prediction. "
+            f"Only {total_records} records available."
+        )
         st.stop()
 
+    # Step 4: Prepare price data
     prices = filtered_df["Modal Price"].values.reshape(-1, 1)
 
-    # Scaling
     scaler = MinMaxScaler(feature_range=(0, 1))
     scaled_prices = scaler.fit_transform(prices)
 
-    # Prepare input sequence
     last_seq = scaled_prices[-time_steps:]
     input_seq = last_seq.reshape(1, time_steps, 1)
 
@@ -105,11 +114,11 @@ if st.sidebar.button("🔮 Predict"):
 
     last_date = filtered_df["Arrival_Date"].max()
 
-    for i in range(days):
+    # Step 5: Predict future prices
+    for i in range(weeks):
         next_scaled = model.predict(input_seq, verbose=0)[0][0]
         predictions.append(next_scaled)
 
-        # Update input sequence
         input_seq = np.append(
             input_seq[:, 1:, :],
             [[[next_scaled]]],
@@ -119,21 +128,22 @@ if st.sidebar.button("🔮 Predict"):
         # Weekly data → add 7 days
         future_dates.append(last_date + timedelta(days=(i + 1) * 7))
 
-    # Inverse scaling
+    # Step 6: Inverse scaling
     predicted_prices = scaler.inverse_transform(
         np.array(predictions).reshape(-1, 1)
     ).flatten()
 
     # -----------------------------
-    # RESULT DISPLAY
+    # RESULTS
     # -----------------------------
     st.subheader("📌 Prediction Result")
 
     avg_price = predicted_prices.mean()
 
     st.success(
-        f"The predicted average price of **{commodity}** in **{market}** "
-        f"for the next **{days} weeks** is approximately **₹{avg_price:.2f}**."
+        f"The predicted average price of **{commodity}** "
+        f"for the next **{weeks} weeks** is approximately "
+        f"**₹{avg_price:.2f}**."
     )
 
     # -----------------------------
@@ -152,11 +162,11 @@ if st.sidebar.button("🔮 Predict"):
     st.dataframe(result_df, use_container_width=True)
 
     # -----------------------------
-    # EXTRA INFO
+    # INFO
     # -----------------------------
     st.info(
         f"ℹ️ Prediction generated using **{time_steps} historical records** "
-        f"for the selected commodity and market."
+        f"after dynamic adjustment."
     )
 
 # -----------------------------
@@ -167,6 +177,6 @@ st.write("""
 1. Select the commodity and market from the sidebar.
 2. Choose the number of weeks to predict.
 3. Click **Predict** to view future prices.
-4. The system dynamically adjusts to available historical data.
-5. Predictions are generated using an **LSTM deep learning model** trained on weekly price data.
+4. If market-level data is limited, the system automatically uses commodity-level trends.
+5. Predictions are generated using an **LSTM deep learning model** trained on weekly agricultural price data.
 """)

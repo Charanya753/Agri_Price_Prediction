@@ -14,8 +14,13 @@ This project implements an LSTM-based deep learning model to forecast prices of 
 ## Technologies Used 🛠️
 
 Python
+
 TensorFlow / Keras
+
 LSTM (Long Short-Term Memory)
+
 Pandas & NumPy
+
 Matplotlib / Seaborn
+
 Scikit-learn
